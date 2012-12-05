@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import re
 import MySQLdb
 from xml.dom.minidom import parseString
 
@@ -30,14 +31,78 @@ def domFromTemplate(templateContent):
 
   return dom
 
+def fixNode(node,groups,templateId):
+  if not node.hasAttribute('class'):
+    return False
+
+  classAttr = node.getAttribute('class')
+  if node.hasAttribute('group'):
+    m = re.search(r'grid-h-',classAttr,flags=re.IGNORECASE)
+    if m is not None:
+      group = node.getAttribute('group')
+      if not group in groups:
+        groups[group] = []
+      groups[group].append(node)
+      return False
+
+  m = re.search(r'grid-h-',classAttr)
+  if m is not None:
+    classAttr = re.sub(r'grid-h-',r'grid-H-',classAttr)
+    node.setAttribute('class', classAttr)
+    return True
+
+  return False
+
+def fixGroup(groupName,group,templateId):
+  memberCount = len(group)
+  if memberCount == 0:
+    return False
+  elif memberCount == 1:
+    node = group[0]
+    classAttr = node.getAttribute('class')
+    m = re.search(r'grid-h-',classAttr)
+    if m is not None:
+      classAttr = re.sub(r'grid-h-',r'grid-H-',classAttr)
+      node.setAttribute('class',classAttr)
+      return True
+  else:
+    capCount = 0
+    for node in group:
+      classAttr = node.getAttribute('class')
+      m = re.search(r'grid-H-',classAttr)
+      if m is not None:
+        capCount += 1
+    if capCount != 1:
+      print "fixGroup(%s) has bad capital count in template (%s)" % (groupName,str(templateId))
+      #TODO: fix groups
+
+  return False
+
+def fixDom(dom,templateId):
+  groups = {}
+  fixed = False
+
+  nodes = dom.getElementsByTagName('*')
+  for node in nodes:
+    if fixNode(node,groups,templateId):
+      fixed = True
+
+  for group in groups:
+    if fixGroup(group,groups[group],templateId):
+      fixed = True
+
+  return fixed
+
 def fixTemplate(templateId,templateName,templateContent):
-  #print "Fixing: %s" % templateName
   dom = domFromTemplate(templateContent)
   if dom is None:
-    print 'Error (%s): %s' % (str(templateId),templateName)
+    print 'Error in template (id=%s): %s' % (str(templateId),templateName)
     return None
-  node = dom.documentElement.firstChild
-  fixedContent = node.toxml()
+  if fixDom(dom,templateId):
+    node = dom.documentElement.firstChild
+    fixedContent = node.toxml()
+  else:
+    fixedContent = None
   return fixedContent
 
 def saveTemplateContent(templateId,templateContent):
@@ -49,12 +114,19 @@ def saveTemplateContent(templateId,templateContent):
   return True
 
 def runAllFixes():
+  fixedCount = 0
   templates = fetchTemplates()
   for template in templates:
     fixedContent = fixTemplate(template[0],template[1],template[2])
     if fixedContent is not None:
+      fixedCount += 1
+      print 'Saving (%s): %s' % (template[0],template[1])
       saveTemplateContent(template[0],fixedContent)
-  return False
+    #else:
+    #  print 'Failed (%s): %s' % (template[0],template[1])
+
+  print 'Fixed %d of %d' % (fixedCount, len(templates))
+  return True
 
 if __name__ == "__main__":
   runAllFixes()
