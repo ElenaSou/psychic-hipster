@@ -35,13 +35,25 @@ def fixTemplate(templateId,templateName,templateContent):
   dom = domFromTemplate(templateContent)
   if dom is None:
     print 'Error (%s): %s' % (str(templateId),templateName)
-    return False
+    return None
+  node = dom.documentElement.firstChild
+  fixedContent = node.toxml()
+  return fixedContent
+
+def saveTemplateContent(templateId,templateContent):
+  connection = MySQLdb.connect(DB_SERVER,DB_USER,DB_PASSWD,DB_DATABASE)
+  cursor = connection.cursor()
+  cursor.execute("UPDATE core_template SET content=%s WHERE id=%s",(templateContent,str(templateId)))
+  connection.commit()
+  connection.close()
   return True
 
 def runAllFixes():
   templates = fetchTemplates()
   for template in templates:
-    fixTemplate(template[0],template[1],template[2])
+    fixedContent = fixTemplate(template[0],template[1],template[2])
+    if fixedContent is not None:
+      saveTemplateContent(template[0],fixedContent)
   return False
 
 if __name__ == "__main__":
